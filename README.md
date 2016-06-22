@@ -1,4 +1,7 @@
-define a sequence of indexed tasks in a file called tasks.just:
+JUST facilitates working with shell scripts by grouping commands under a task name and allowing to incrementally execute each task.
+
+Usage:
+Define a sequence of indexed tasks in a file (for exampletasks.just):
 
 1:task1:{{
   echo "$T"; # bash-cmd11 $PARAM_1_1
