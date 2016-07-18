@@ -24,12 +24,15 @@ def parseArgs():
     parser.add_argument('--stages', '-s', default="all", type=str, help='all or 1 or 1-5')
     parser.add_argument('--workdir', type=str, required=True, help='working directory')
     parser.add_argument('--bashheader', default="#!/bin/bash", type=str, help='bash header')
-    parser.add_argument('--verbose', action='store_true', help="verbose bash files")
+    parser.add_argument('--verbose', action='store_true', help="verbose bash files (-v)")
+    parser.add_argument('--debug', action='store_true', help="debug bash files (-x)")
     parser.add_argument('--list', action='store_true', help="list which stages are available")
 
     args = parser.parse_args()
     if args.verbose:
         args.bashheader += ' -v'
+    if args.debug:
+        args.bashheader += ' -x'
 
 
     args.files = Struct()
