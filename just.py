@@ -1,4 +1,4 @@
-#!/Users/tomerlevinboim/anaconda/bin/python
+#!/usr/bin/python
 
 import argparse
 import subprocess
