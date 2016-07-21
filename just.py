@@ -106,7 +106,8 @@ def write_body(cmd_args, task_id, config_params, task_body):
     path = "%s/task.%d.sh" % (cmd_args.workdir, task_id)
     with open(path, 'wb') as f:
         f.write(cmd_args.bashheader + '\n\n')
-        if cmd_args.qsub is not None: f.write(QSUB_HEADER)
+
+        if task_id != 0 and cmd_args.qsub is not None: f.write(QSUB_HEADER)
 
         # write the parsed config
         f.write('## CONFIG ##\n')
