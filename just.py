@@ -102,12 +102,13 @@ def parseParams(lines, params=None):
     return params
 
 
-def write_body(cmd_args, task_id, config_params, task_body):
-    path = "%s/task.%d.sh" % (cmd_args.workdir, task_id)
+def write_body(cmd_args, config_params, task_id, task_name, task_body):
+    path = "%s/task.%d.%s.sh" % (cmd_args.workdir, task_id, task_name)
     with open(path, 'wb') as f:
-        f.write(cmd_args.bashheader + '\n\n')
+        f.write(cmd_args.bashheader + '\n\n')                               # bash header
 
-        if task_id != 0 and cmd_args.qsub is not None: f.write(QSUB_HEADER)
+        if task_id != 0 and cmd_args.qsub is not None:                      # write the qsub header if required
+            f.write(QSUB_HEADER)
 
         # write the parsed config
         f.write('## CONFIG ##\n')
@@ -138,7 +139,7 @@ def executeTasks(cmd_args, tasks, config_params):
             config_params = parseParams(task_body, config_params)
         if do_task(task_id) or task_id == 0:
             msg("Executing task #%d: '%s'" % (task_id, task_name))
-            path = write_body(cmd_args, task_id, config_params, task_body)
+            path = write_body(cmd_args, config_params, task_id, task_name, task_body)
             os.chmod(path, 0755)    # make executable.
 
             if task_id != 0 and cmd_args.qsub is not None:
