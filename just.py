@@ -9,8 +9,7 @@ import IO
 from collections import OrderedDict
 
 
-QSUB_HEADER = """
-#$ -M tlevinbo@nd.edu
+QSUB_HEADER = """#$ -M tlevinbo@nd.edu
 #$ -m ae
 #$ -r n
 #$ -pe smp 16
@@ -109,16 +108,18 @@ def write_body(cmd_args, task_id, config_params, task_body):
         f.write(cmd_args.bashheader + '\n\n')
         if cmd_args.qsub is not None: f.write(QSUB_HEADER)
 
-        # write the config
+        # write the parsed config
         f.write('## CONFIG ##\n')
         for vname in config_params:
             assign_line = vname + '=' + str(config_params[vname]) + '\n'
             f.write(assign_line)
         # write the commands.
-        f.write('\n## BODY ##\n')
-        for line in task_body:
-            f.write(line + '\n')
+        if task_id != 0:
+            f.write('\n## BODY ##\n')
+            for line in task_body:
+                f.write(line + '\n')
     return path
+
 
 MSG_PREFIX = "JUST:"
 def msg(str):
@@ -139,9 +140,11 @@ def executeTasks(cmd_args, tasks, config_params):
             path = write_body(cmd_args, task_id, config_params, task_body)
             os.chmod(path, 0755)    # make executable.
 
-            if cmd_args.qsub is not None:
+            if task_id != 0 and cmd_args.qsub is not None:
                 path = "qsub -q %s %s" % (cmd_args.qsub, path)
             output = os.system(path)
+
+    return output
 
 
 if __name__ == '__main__':
