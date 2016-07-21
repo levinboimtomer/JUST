@@ -8,12 +8,17 @@ import os.path
 import IO
 from collections import OrderedDict
 
-#
-# def exec_cmd(cmd):
-#     process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE)
-#     stdout, stderr = process.communicate()
-#     return stdout, stderr, process
 
+QSUB_HEADER = """
+#$ -M tlevinbo@nd.edu
+#$ -m ae
+#$ -r n
+#$ -pe smp 16
+
+date
+fsync -d 10 $SGE_STDOUT_PATH &   # updated log every 20 seconds
+##
+"""
 
 class Struct():
     pass
@@ -102,6 +107,8 @@ def write_body(cmd_args, task_id, config_params, task_body):
     path = "%s/task.%d.sh" % (cmd_args.workdir, task_id)
     with open(path, 'wb') as f:
         f.write(cmd_args.bashheader + '\n\n')
+        if cmd_args.qsub is not None: f.write(QSUB_HEADER)
+
         # write the config
         f.write('## CONFIG ##\n')
         for vname in config_params:
