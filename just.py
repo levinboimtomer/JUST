@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 import argparse
-import subprocess
+#import subprocess
 import sys
 import re
 import os.path
@@ -14,8 +14,10 @@ from collections import OrderedDict
 #     stdout, stderr = process.communicate()
 #     return stdout, stderr, process
 
+
 class Struct():
     pass
+
 
 def parseArgs():
     parser = argparse.ArgumentParser()
@@ -27,6 +29,7 @@ def parseArgs():
     parser.add_argument('--verbose', action='store_true', help="verbose bash files (-v)")
     parser.add_argument('--debug', action='store_true', help="debug bash files (-x)")
     parser.add_argument('--list', action='store_true', help="list which stages are available")
+    parser.add_argument('--qsub', '-q', default=None, type=str, help='qsub queue (works for a single task only)')
 
     args = parser.parse_args()
     if args.verbose:
@@ -128,6 +131,9 @@ def executeTasks(cmd_args, tasks, config_params):
             msg("Executing task #%d: '%s'" % (task_id, task_name))
             path = write_body(cmd_args, task_id, config_params, task_body)
             os.chmod(path, 0755)    # make executable.
+
+            if cmd_args.qsub is not None:
+                path = "qsub -q %s %s" % (cmd_args.qsub, path)
             output = os.system(path)
 
 
