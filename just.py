@@ -103,7 +103,10 @@ def parseParams(lines, params=None):
 
 
 def write_body(cmd_args, config_params, task_id, task_name, task_body):
-    path = "%s/task.%d.%s.sh" % (cmd_args.workdir, task_id, task_name)
+    # Files are saved in the working directory, under the name t$id.$name.sh
+    # note 1: qsub fails on file names starting with a digit.
+    # note 2: shorter names are better for qstat which displays the first 10 characters of the submitted script name
+    path = "%s/t%d.%s.sh" % (cmd_args.workdir, task_id, task_name)
     with open(path, 'wb') as f:
         f.write(cmd_args.bashheader + '\n\n')                               # bash header
 
