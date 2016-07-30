@@ -26,9 +26,9 @@ class Struct():
 def parseArgs():
     parser = argparse.ArgumentParser()
     parser.add_argument('main', type=str)
-    parser.add_argument('--config', '-c', default=None, type=str, help='global configuration file')
-    parser.add_argument('--stages', '-s', default="all", type=str, help='all or 1 or 1-5')
     parser.add_argument('--workdir', type=str, required=True, help='working directory')
+    parser.add_argument('--stages', '-s', default="all", type=str, help='all or 1 or 1-5')
+    parser.add_argument('--evaluate', '-e', default=None, type=str, help="a bash command evaluated before each task")
     parser.add_argument('--bashheader', default="#!/bin/bash", type=str, help='bash header')
     parser.add_argument('--verbose', action='store_true', help="verbose bash files (-v)")
     parser.add_argument('--debug', action='store_true', help="debug bash files (-x)")
@@ -41,10 +41,8 @@ def parseArgs():
     if args.debug:
         args.bashheader += ' -x'
 
-
     args.files = Struct()
     args.files.main = sys.argv[1]
-    args.files.config = args.config
 
     args.start_stage = -1
     args.final_stage = -1
@@ -113,6 +111,8 @@ def write_body(cmd_args, config_params, task_id, task_name, task_body):
         if task_id != 0 and cmd_args.qsub is not None:                      # write the qsub header if required
             f.write(QSUB_HEADER)
 
+        if cmd_args.evaluate is not None:
+            f.write(cmd_args.evaluate + "# --evaluate")
         # write the parsed config
         f.write('## CONFIG ##\n')
         for vname in config_params:
@@ -161,10 +161,8 @@ if __name__ == '__main__':
 
     config_params = parseParams([], OrderedDict({'workdir': cmd_args.workdir}))
 
-
     if cmd_args.list:
         for task_id, task_params in tasks.items():
             msg("stage %d: %s" % (task_id, task_params['task_name']))
-        sys.exit(0)
-
-    executeTasks(cmd_args, tasks, config_params)
+    else:
+        executeTasks(cmd_args, tasks, config_params)
