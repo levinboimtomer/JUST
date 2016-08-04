@@ -151,9 +151,9 @@ def executeTasks(cmd_args, tasks, config_params):
                 if qsub_id is not None: path += "-W depend=afterok:%d" % qsub_id # depend on previous qsub task id
 
             output = os.system(path)
-            if cmd_args.qsub is not None:
-                possible_ids = [int(s) for s in output.split() if s.isdigit()]
-                if len(possible_ids) > 0: qsub_id = possible_ids[0]  # extract qsub task id
+            #if cmd_args.qsub is not None:
+            #    possible_ids = [int(s) for s in output.split() if s.isdigit()]
+            #    if len(possible_ids) > 0: qsub_id = possible_ids[0]  # extract qsub task id
 
 
     return output
