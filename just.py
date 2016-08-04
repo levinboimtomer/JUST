@@ -133,6 +133,7 @@ def msg(str):
 
 def executeTasks(cmd_args, tasks, config_params):
     do_task = lambda x: cmd_args.all_stages or (x >= cmd_args.start_stage and x <= cmd_args.final_stage)
+    qsub_id = None
     for task_id in sorted(tasks.keys()):
 
         task_name = tasks[task_id]['task_name']
@@ -147,7 +148,13 @@ def executeTasks(cmd_args, tasks, config_params):
 
             if task_id != 0 and cmd_args.qsub is not None:
                 path = "qsub -q %s %s" % (cmd_args.qsub, path)
+                if qsub_id is not None: path += "-W depend=afterok:%d" % qsub_id # depend on previous qsub task id
+
             output = os.system(path)
+            if cmd_args.qsub is not None:
+                possible_ids = [int(s) for s in output.split() if s.isdigit()]
+                if len(possible_ids) > 0: qsub_id = possible_ids[0]  # extract qsub task id
+
 
     return output
 
