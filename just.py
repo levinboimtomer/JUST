@@ -147,10 +147,10 @@ def executeTasks(cmd_args, tasks, config_params):
             os.chmod(path, 0755)    # make executable.
 
             if task_id != 0 and cmd_args.qsub is not None:
-                path = "qsub -q %s %s" % (cmd_args.qsub, path)
-                if qsub_id is not None: path += "-W depend=afterok:%d" % qsub_id # depend on previous qsub task id
+                depend = "" if qsub_id is None else " -hold_id %d" % qsub_id # depend on previous qsub task id (Univa grid)
+                path = "qsub %s -q %s %s" % (depend, cmd_args.qsub, path)
 
-            output = os.popen(path).read() # TODO, change to subprocess
+            output = os.popen(path).read()  # TODO, change to subprocess
             if cmd_args.qsub is not None:
                 possible_ids = [int(s) for s in output.split() if s.isdigit()]
                 if len(possible_ids) > 0: qsub_id = possible_ids[0]  # extract qsub task id
