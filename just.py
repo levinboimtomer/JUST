@@ -30,8 +30,8 @@ def parseArgs():
     parser.add_argument('--stages', '-s', default="all", type=str, help='all or 1 or 1-5')
     parser.add_argument('--evaluate', '-e', default=None, type=str, help="a bash command evaluated before each task")
     parser.add_argument('--bashheader', default="#!/bin/bash", type=str, help='bash header')
-    parser.add_argument('--verbose', action='store_true', help="verbose bash files (-v)")
-    parser.add_argument('--debug', action='store_true', help="debug bash files (-x)")
+    parser.add_argument('--verbose', '-v', action='store_true', help="verbose bash files (-v)")
+    parser.add_argument('--debug', '-x', action='store_true', help="debug bash files (-x)")
     parser.add_argument('--list', action='store_true', help="list which stages are available")
     parser.add_argument('--qsub', '-q', default=None, type=str, help='qsub queue (works for a single task only)')
 
@@ -150,10 +150,10 @@ def executeTasks(cmd_args, tasks, config_params):
                 path = "qsub -q %s %s" % (cmd_args.qsub, path)
                 if qsub_id is not None: path += "-W depend=afterok:%d" % qsub_id # depend on previous qsub task id
 
-            output = os.system(path)
-            #if cmd_args.qsub is not None:
-            #    possible_ids = [int(s) for s in output.split() if s.isdigit()]
-            #    if len(possible_ids) > 0: qsub_id = possible_ids[0]  # extract qsub task id
+            output = os.popen(path).read() # TODO, change to subprocess
+            if cmd_args.qsub is not None:
+                possible_ids = [int(s) for s in output.split() if s.isdigit()]
+                if len(possible_ids) > 0: qsub_id = possible_ids[0]  # extract qsub task id
 
 
     return output
