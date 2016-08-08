@@ -14,6 +14,7 @@ foreach $a (@assignments) {
     $D{$key} = $value;
 }
 
+# substitute variables
 while ($line = <>) {
     foreach my $k (keys %D) {
       my $v = $D{$k};
@@ -22,6 +23,7 @@ while ($line = <>) {
     print $line;
 }
 
+# strip trailing whitespace from start or end.
 sub clean {
     my $a = shift;
     $a =~ s/^\s*//;
