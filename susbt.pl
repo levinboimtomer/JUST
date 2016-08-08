@@ -1,3 +1,4 @@
+#/usr/bin/perl
 use strict;
 
 my $line;
@@ -14,7 +15,8 @@ foreach $a (@assignments) {
 }
 
 while ($line = <>) {
-    foreach my $k (keys %D) {
+    foreach my
+    /$k (keys %D) {
       my $v = $D{$k};
       $line =~ s!{$k}!$v!g;
     }
