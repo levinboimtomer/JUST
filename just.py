@@ -152,7 +152,7 @@ def executeTasks(cmd_args, tasks, config_params):
             # execute
             if cmd_args.qsub:
                 output = os.popen(path).read()  # TODO, change to subprocess
-                msg("`output:\n" + output)
+                msg("qsub output:\n" + output)
             else:
                 output = os.system(path)
 
