@@ -149,13 +149,13 @@ def executeTasks(cmd_args, tasks, config_params):
             if task_id != 0 and cmd_args.qsub is not None:
                 depend = "" if qsub_id is None else " -hold_jid %d" % qsub_id # depend on previous qsub task id (Univa grid)
                 path = "qsub %s -q %s %s" % (depend, cmd_args.qsub, path)
-                
+            # execute
             if cmd_args.qsub:
                 output = os.popen(path).read()  # TODO, change to subprocess
+                msg("`output:\n" + output)
             else:
                 output = os.system(path)
 
-            msg("`output:\n" + output)
             if cmd_args.qsub is not None:
                 possible_ids = [int(s) for s in output.split() if s.isdigit()]
                 if len(possible_ids) > 0: qsub_id = possible_ids[0]  # extract qsub task id
