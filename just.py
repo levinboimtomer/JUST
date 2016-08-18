@@ -101,10 +101,10 @@ def parseParams(lines, params=None):
 
 
 def write_body(cmd_args, config_params, task_id, task_name, task_body):
-    # Files are saved in the working directory, under the name t$id.$name.sh
+    # Files are saved in the working directory, under the name s$id.$name.sh
     # note 1: qsub fails on file names starting with a digit.
     # note 2: shorter names are better for qstat which displays the first 10 characters of the submitted script name
-    path = "%s/t%d.%s.sh" % (cmd_args.workdir, task_id, task_name)
+    path = "%s/s%d.%s.sh" % (cmd_args.workdir, task_id, task_name)
     with open(path, 'wb') as f:
         f.write(cmd_args.bashheader + '\n\n')                               # bash header
 
@@ -112,7 +112,7 @@ def write_body(cmd_args, config_params, task_id, task_name, task_body):
             f.write(QSUB_HEADER)
 
         if cmd_args.evaluate is not None:
-            f.write(cmd_args.evaluate + "# --evaluate")
+            f.write(cmd_args.evaluate + "# --evaluate\n")
         # write the parsed config
         f.write('## CONFIG ##\n')
         for vname in config_params:
@@ -148,7 +148,8 @@ def executeTasks(cmd_args, tasks, config_params):
 
             if task_id != 0 and cmd_args.qsub is not None:
                 depend = "" if qsub_id is None else " -hold_jid %d" % qsub_id # depend on previous qsub task id (Univa grid)
-                path = "qsub %s -q %s %s" % (depend, cmd_args.qsub, path)
+                name = path + '.wd=' + cmd_args.workdir
+                path = "qsub %s -q %s %s -N %s" % (depend, cmd_args.qsub, path, name)
             # execute
             if cmd_args.qsub:
                 output = os.popen(path).read()  # TODO, change to subprocess
