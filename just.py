@@ -67,7 +67,7 @@ def parseTasks(args):
     task_body = []
     for line in lines:
         m_start = re.match(r"(.*):(.*):.*{{", line)
-        m_end = re.match(r"^}}\s*$", line)
+        m_end = re.match(r"^#*}}\s*$", line)
 
         if m_end:
             is_in = False
