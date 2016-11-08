@@ -1,11 +1,12 @@
 (WORK IN PROGRESS)
 'just' facilitates the construction and management of bash based pipelines on a cluster by 
-1. grouping commands under a task name/id and 
-2. easily executing tasks by scheduling them on the cluster. job dependence is supported to some extent (chains graphs only)
-3. logging STDOUT/STDERR in meaningful names.
+* Grouping commands under a task name/id
+* Sharing global variables among tasks (for example paths to common programs)
+* Easily scheduling tasks as jobs on a cluster (job dependence is supported for tasks with consecutive ids)
+* logging STDOUT/STDERR in meaningful file names.
 
 Usage:
-Define a sequence of indexed tasks in a file (here named 'tasks.just'):
+* Define a sequence of indexed tasks in a file (here named 'tasks.just'):
 
 <pre>
 1:task1:{{
@@ -18,6 +19,5 @@ Define a sequence of indexed tasks in a file (here named 'tasks.just'):
 }}
 </pre>
 
-and execute:
-
+* execute:
 just.py tasks.just [config] -s [start[:end]] -workdir:[output_folder]
