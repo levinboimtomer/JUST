@@ -19,5 +19,5 @@ Usage:
 }}
 </pre>
 
-* execute:
+* Execute:
 just.py tasks.just [config] -s [start[:end]] -workdir:[output_folder]
