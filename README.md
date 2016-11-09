@@ -1,16 +1,17 @@
 (WORK IN PROGRESS)
+
 'just' facilitates the construction and management of bash based pipelines on a cluster by 
 * Grouping commands under a task name/id
 * Sharing global variables among tasks (for example paths to common programs)
 * Easily scheduling tasks as jobs on a cluster (job dependence is supported for tasks with consecutive ids)
 
-Reasons to work with just:
+<b>Reasons to work with just</b>:
 * Modularity - 'just' enables writing a modular pipeline (and modularity implies resuable code, shorter debug cycles)
 * Reproducibility - Don't struggle with your own commands 3 months from now.
 * Slightly better job logs - STDOUT/STDERR are written into files with meaningful names (defined by the task name).
 
 
-Usage:
+<b>Usage</b>:
 * Define a sequence of indexed tasks in a file (here named 'tasks.just'):
 
 <pre>
@@ -30,5 +31,5 @@ Usage:
 }}
 </pre>
 
-* Execute on current machine: just.py tasks.just -s 1-2 --workdir test_just
-* Schedule on a cluster: just.py tasks.just -s 1-2 --workdir test_just --q $QUEUE_NAME (e.g. -q '*@@nlp' on ND's CRC)
+* <b>Execute on current machine</b>: just.py tasks.just -s 1-2 --workdir test_just
+* <b>Schedule on a cluster</b>: just.py tasks.just -s 1-2 --workdir test_just --q $QUEUE_NAME (e.g. -q '*@@nlp' on ND's CRC)
