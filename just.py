@@ -9,7 +9,7 @@ import IO
 from collections import OrderedDict
 
 
-QSUB_HEADER = """#$ -M tlevinbo@nd.edu
+QSUB_HEADER = """#$ -M your@email.com
 #$ -m ae
 #$ -r n
 #$ -pe smp 16
