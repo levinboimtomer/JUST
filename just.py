@@ -1,7 +1,6 @@
 #!/usr/bin/python
 
 import argparse
-#import subprocess
 import sys
 import re
 import os.path
@@ -89,12 +88,12 @@ def parseParams(lines, params=None):
         params = OrderedDict()  # order of insertion matters.
     for i, line in enumerate(lines):
         if '=' not in line: IO.logError('Error: cannot parse line %d:\n%s' % (i, line))
-        vname, value = line.split('=')
-        if ':' in vname:
-            vname, vtype = vname.split(':')
-            if vtype == 'int': value = int(value)
-            if vtype == 'float': value = float(value)
-            if vtype == 'ifile': assert os.path.isfile(value), "file '%s' does not exist" % value
+        vname, value = line.split('=', 1) # split on first '='
+        # if ':' in vname:
+        #     vname, vtype = vname.split(':')
+        #     if vtype == 'int': value = int(value)
+        #     if vtype == 'float': value = float(value)
+        #     if vtype == 'ifile': assert os.path.isfile(value), "file '%s' does not exist" % value
 
         params[vname] = value
     return params
@@ -112,7 +111,7 @@ def write_body(cmd_args, config_params, task_id, task_name, task_body):
             f.write(QSUB_HEADER)
 
         if cmd_args.evaluate is not None:
-            f.write(cmd_args.evaluate + "# --evaluate\n")
+            f.write(cmd_args.evaluate + "# JUST: user evaluate input\n")
         # write the parsed config
         f.write('## CONFIG ##\n')
         for vname in config_params:
@@ -164,16 +163,21 @@ def executeTasks(cmd_args, tasks, config_params):
     return output
 
 
+def make_dir(input_dir):
+    if not os.path.exists(input_dir):
+        msg("Creating directory " + input_dir)
+        os.makedirs(input_dir)
+
+
 if __name__ == '__main__':
     cmd_args = parseArgs()
     tasks = parseTasks(cmd_args)
-    if not os.path.exists(cmd_args.workdir):
-        msg("creating directory " + cmd_args.workdir)
-        os.makedirs(cmd_args.workdir)
+    make_dir(cmd_args.workdir)
 
     config_params = parseParams([], OrderedDict({'workdir': cmd_args.workdir}))
 
     if cmd_args.list:
+        # output the list of tasks.
         for task_id, task_params in tasks.items():
             msg("stage %d: %s" % (task_id, task_params['task_name']))
     else:
