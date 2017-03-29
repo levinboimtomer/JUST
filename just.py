@@ -14,7 +14,7 @@ QSUB_HEADER = """#$ -M your@email.com
 #$ -pe smp 16
 
 date
-fsync -d 10 $SGE_STDOUT_PATH &   # updated log every 20 seconds
+fsync -d 10 $SGE_STDOUT_PATH &   # updated log every -d seconds
 ##
 """
 
