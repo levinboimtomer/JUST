@@ -3,7 +3,7 @@
 "just" facilitates the construction and management of bash based pipelines on a cluster by 
 * Grouping commands under a task name/id
 * Sharing global variables among tasks (for example paths to common programs)
-* Easily scheduling tasks as jobs on a cluster (job dependence is supported for tasks with consecutive ids)
+* Easily scheduling tasks as jobs on a cluster (supports job dependency for tasks with consecutive ids)
 
 <b>Reasons to use "just"</b>:
 * Modularity and reusable code: shorter debug cycles
