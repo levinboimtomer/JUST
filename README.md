@@ -1,14 +1,17 @@
 (WORK IN PROGRESS)
 
-'just' facilitates the construction and management of bash based pipelines on a cluster by 
+"just" facilitates the construction and management of bash based pipelines on a cluster by 
 * Grouping commands under a task name/id
 * Sharing global variables among tasks (for example paths to common programs)
 * Easily scheduling tasks as jobs on a cluster (job dependence is supported for tasks with consecutive ids)
 
-<b>Reasons to work with just</b>:
-* Modularity - 'just' enables writing a modular pipeline (and modularity implies resuable code, shorter debug cycles)
-* Reproducibility - Don't struggle with your own commands 3 months from now.
-* Slightly better job logs - STDOUT/STDERR are written into files with meaningful names (defined by the task name).
+<b>Reasons to use "just"</b>:
+* Modularity and reusable code: shorter debug cycles
+* Reproducibility: don't struggle with your own scripts 3 months from now.
+* qsub logging
+  * STDOUT/STDERR are logged into files with meaningful names, indicating the task they belong to.
+  * qsub logs are synced to the master node
+ 
 
 
 <b>Usage</b>:
