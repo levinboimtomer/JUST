@@ -4,19 +4,9 @@ import argparse
 import sys
 import re
 import os.path
+import subprocess
+
 import IO
-from collections import OrderedDict
-
-
-QSUB_HEADER = """#$ -M your@email.com
-#$ -m ae
-#$ -r n
-#$ -pe smp 16
-
-date
-fsync -d 10 $SGE_STDOUT_PATH &   # updated log every -d seconds
-##
-"""
 
 class Struct():
     pass
@@ -56,7 +46,7 @@ def parseArgs():
 
 
 def parseTasks(args):
-    lines = IO.readlines(args.main, strip=True, skip=['empty', 'comment'])
+    lines = IO.readlines(args.main, strip=True, skip=['empty'])
     tasks = dict()
 
     is_in = False
@@ -82,45 +72,27 @@ def parseTasks(args):
     return tasks
 
 
-def parseParams(lines, params=None):
-    if params is None:
-        params = OrderedDict()  # order of insertion matters.
-    for i, line in enumerate(lines):
-        if '=' not in line: IO.logError('Error: cannot parse line %d:\n%s' % (i, line))
-        vname, value = line.split('=', 1) # split on first '='
-        # if ':' in vname:
-        #     vname, vtype = vname.split(':')
-        #     if vtype == 'int': value = int(value)
-        #     if vtype == 'float': value = float(value)
-        #     if vtype == 'ifile': assert os.path.isfile(value), "file '%s' does not exist" % value
-
-        params[vname] = value
-    return params
-
-
-def write_body(cmd_args, config_params, task_id, task_name, task_body):
+def write_body(cmd_args, prologue_body, task_id, task_name, task_body):
     # Files are saved in the working directory, under the name s$id.$name.sh
     # note 1: qsub fails on file names starting with a digit.
     # note 2: shorter names are better for qstat which displays the first 10 characters of the submitted script name
     path = "%s/s%d.%s.sh" % (cmd_args.workdir, task_id, task_name)
     with open(path, 'wb') as f:
-        f.write(cmd_args.bashheader + '\n\n')                               # bash header
 
-        if task_id != 0 and cmd_args.qsub is not None:                      # write the qsub header if required
-            f.write(QSUB_HEADER)
+        f.write(cmd_args.bashheader + '\n\n')                               # bash header
 
         if cmd_args.evaluate is not None:
             f.write(cmd_args.evaluate + "# JUST: user evaluate input\n")
+
         # write the parsed config
         f.write('## CONFIG ##\n')
-        for vname in config_params:
-            assign_line = vname + '=' + str(config_params[vname]) + '\n'
-            f.write(assign_line)
+        for line in prologue_body:
+            f.write(line + '\n')
+
         # write the commands.
-        if task_id != 0:
-            f.write('\n## BODY ##\n')
-            for line in task_body:
-                f.write(line + '\n')
+        f.write('\n## BODY ##\n')
+        for line in task_body:
+            f.write(line + '\n')
     return path
 
 
@@ -129,37 +101,40 @@ def msg(str):
     print >> sys.stderr, MSG_PREFIX, str
 
 
-def executeTasks(cmd_args, tasks, config_params):
+def executeTasks(cmd_args, tasks):
     do_task = lambda x: cmd_args.all_stages or (x >= cmd_args.start_stage and x <= cmd_args.final_stage)
     qsub_id = None
+    prologue_body = []
     for task_id in sorted(tasks.keys()):
 
         task_name = tasks[task_id]['task_name']
         task_body = tasks[task_id]['task_body']
         if task_id == 0:
-            msg("Parsing fixed params in %s task (task_id=%d)." % (task_name, task_id))
-            config_params = parseParams(task_body, config_params)
-        if do_task(task_id) or task_id == 0:
-            msg("Executing task #%d: '%s'" % (task_id, task_name))
-            path = write_body(cmd_args, config_params, task_id, task_name, task_body)
-            os.chmod(path, 0755)    # make executable.
+            prologue_body = task_body
 
-            if task_id != 0 and cmd_args.qsub is not None:
-                depend = "" if qsub_id is None else " -hold_jid %d" % qsub_id # depend on previous qsub task id (Univa grid)
-                name = path + '.wd=' + cmd_args.workdir
-                path = "qsub %s -q %s %s -N %s" % (depend, cmd_args.qsub, path, name)
-            # execute
-            if cmd_args.qsub:
-                output = os.popen(path).read()  # TODO, change to subprocess
-                msg("qsub output:\n" + output)
-            else:
-                output = os.system(path)
+        elif do_task(task_id):
+            msg("Executing task #%d: '%s'" % (task_id, task_name))
+            path = write_body(cmd_args, prologue_body, task_id, task_name, task_body)
 
             if cmd_args.qsub is not None:
+                cmd = ['qsub']
+                if qsub_id is not None:
+                    cmd.extend(['-hold_jid', str(qsub_id)])
+                cmd.extend(['-q', cmd_args.qsub])
+                cmd.extend(['-N', "s{}.{}.wd={}".format(task_id, task_name, cmd_args.workdir)])
+                cmd.extend(['-v', 'workdir='+cmd_args.workdir])
+                cmd.append(path)
+                msg("running: " + ' '.join(cmd))
+                output = subprocess.check_output(cmd)
+                msg("qsub output:\n" + output)
                 possible_ids = [int(s) for s in output.split() if s.isdigit()]
                 if len(possible_ids) > 0: qsub_id = possible_ids[0]  # extract qsub task id
 
-    return output
+            else:
+                os.chmod(path, 0755)    # make executable.
+                env = dict(os.environ)
+                env['workdir'] = cmd_args.workdir
+                status = subprocess.check_call(path, env=env)
 
 
 def make_dir(input_dir):
@@ -173,11 +148,10 @@ if __name__ == '__main__':
     tasks = parseTasks(cmd_args)
     make_dir(cmd_args.workdir)
 
-    config_params = parseParams([], OrderedDict({'workdir': cmd_args.workdir}))
 
     if cmd_args.list:
         # output the list of tasks.
         for task_id, task_params in tasks.items():
             msg("stage %d: %s" % (task_id, task_params['task_name']))
     else:
-        executeTasks(cmd_args, tasks, config_params)
+        executeTasks(cmd_args, tasks)
