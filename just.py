@@ -4,8 +4,9 @@ import argparse
 import sys
 import re
 import os.path
-import IO
+import subprocess
 
+import IO
 
 class Struct():
     pass
@@ -85,7 +86,6 @@ def write_body(cmd_args, prologue_body, task_id, task_name, task_body):
 
         # write the parsed config
         f.write('## CONFIG ##\n')
-        f.write('workdir={}\n'.format(cmd_args.workdir))
         for line in prologue_body:
             f.write(line + '\n')
 
@@ -104,6 +104,7 @@ def msg(str):
 def executeTasks(cmd_args, tasks):
     do_task = lambda x: cmd_args.all_stages or (x >= cmd_args.start_stage and x <= cmd_args.final_stage)
     qsub_id = None
+    prologue_body = []
     for task_id in sorted(tasks.keys()):
 
         task_name = tasks[task_id]['task_name']
@@ -114,24 +115,26 @@ def executeTasks(cmd_args, tasks):
         elif do_task(task_id):
             msg("Executing task #%d: '%s'" % (task_id, task_name))
             path = write_body(cmd_args, prologue_body, task_id, task_name, task_body)
-            os.chmod(path, 0755)    # make executable.
 
             if cmd_args.qsub is not None:
-                depend = "" if qsub_id is None else " -hold_jid %d" % qsub_id # depend on previous qsub task id (Univa grid)
-                name = path + '.wd=' + cmd_args.workdir
-                path = "qsub %s -q %s %s -N %s" % (depend, cmd_args.qsub, path, name)
-            # execute
-            if cmd_args.qsub:
-                output = os.popen(path).read()  # TODO, change to subprocess
+                cmd = ['qsub']
+                if qsub_id is not None:
+                    cmd.extend(['-hold_jid', str(qsub_id)])
+                cmd.extend(['-q', cmd_args.qsub])
+                cmd.extend(['-N', "s{}.{}.wd={}".format(task_id, task_name, cmd_args.workdir)])
+                cmd.extend(['-v', 'workdir='+cmd_args.workdir])
+                cmd.append(path)
+                msg("running: " + ' '.join(cmd))
+                output = subprocess.check_output(cmd)
                 msg("qsub output:\n" + output)
-            else:
-                output = os.system(path)
-
-            if cmd_args.qsub is not None:
                 possible_ids = [int(s) for s in output.split() if s.isdigit()]
                 if len(possible_ids) > 0: qsub_id = possible_ids[0]  # extract qsub task id
 
-    return output
+            else:
+                os.chmod(path, 0755)    # make executable.
+                env = dict(os.environ)
+                env['workdir'] = cmd_args.workdir
+                status = subprocess.check_call(path, env=env)
 
 
 def make_dir(input_dir):
