@@ -41,7 +41,6 @@ def parseArgs():
         args.bashheader += ' -x'
 
     args.files = Struct()
-    args.files.main = sys.argv[1]
 
     args.start_stage = -1
     args.final_stage = -1
@@ -57,7 +56,7 @@ def parseArgs():
 
 
 def parseTasks(args):
-    lines = IO.readlines(args.files.main, strip=True, skip=['empty', 'comment'])
+    lines = IO.readlines(args.main, strip=True, skip=['empty', 'comment'])
     tasks = dict()
 
     is_in = False
