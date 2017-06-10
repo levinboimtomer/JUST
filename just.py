@@ -16,7 +16,7 @@ def parseArgs():
     parser = argparse.ArgumentParser()
     parser.add_argument('main', type=str)
     parser.add_argument('--workdir', type=str, required=True, help='working directory')
-    parser.add_argument('--stages', '-s', default="all", type=str, help='all or 1 or 1-5')
+    parser.add_argument('--stages', '-s', default="-", type=str, help='1 or 1-5 (default all)')
     parser.add_argument('--evaluate', '-e', default=None, type=str, help="a bash command evaluated before each task")
     parser.add_argument('--bashheader', default="#!/bin/bash", type=str, help='bash header')
     parser.add_argument('--verbose', '-v', action='store_true', help="verbose bash files (-v)")
@@ -30,18 +30,6 @@ def parseArgs():
     if args.debug:
         args.bashheader += ' -x'
 
-    args.files = Struct()
-
-    args.start_stage = -1
-    args.final_stage = -1
-    args.all_stages = args.stages.lower() == 'all'
-    if not args.all_stages:
-        args.all_stages = False
-        stages = args.stages.split('-')
-        args.start_stage = int(stages[0])
-        args.final_stage = int(stages[0])   # default to only running this task
-        if '-' in args.stages:              # unless there's a range, indicated by '-'
-            args.final_stage = int(stages[1])
     return args
 
 
@@ -69,6 +57,8 @@ def parseTasks(args):
         if m_start:
             is_in = True
             task_id, task_name = m_start.groups(0)
+            if '-' in task_name:
+                msg("WARNING: task name should not contain -")
     return tasks
 
 
@@ -101,8 +91,37 @@ def msg(str):
     print >> sys.stderr, MSG_PREFIX, str
 
 
+def lookupTask(task_id, tasks):
+    try:
+        task_id = int(task_id)
+        if task_id not in tasks:
+            raise ValueError("task {} not found".format(task_id))
+        return task_id
+    except ValueError:
+        cands = [i for i in tasks if tasks[i]['task_name'] == task_id]
+        if len(cands) == 0:
+            raise ValueError("task {} not found".format(task_id))
+        elif len(cands) > 1:
+            raise ValueError("task name {} is ambiguous".format(task_id))
+        return cands[0]
+
 def executeTasks(cmd_args, tasks):
-    do_task = lambda x: cmd_args.all_stages or (x >= cmd_args.start_stage and x <= cmd_args.final_stage)
+
+    try:
+        start, stop = cmd_args.stages.split('-', 1)
+    except ValueError:
+        start = stop = cmd_args.stages
+
+    if start == "": start = min(t for t in tasks if t > 0)
+    if stop == "": stop = max(tasks)
+
+    try:
+        start = lookupTask(start, tasks)
+        stop = lookupTask(stop, tasks)
+    except ValueError as e:
+        msg(e)
+        sys.exit(1)
+
     qsub_id = None
     prologue_body = []
     for task_id in sorted(tasks.keys()):
@@ -112,7 +131,7 @@ def executeTasks(cmd_args, tasks):
         if task_id == 0:
             prologue_body = task_body
 
-        elif do_task(task_id):
+        elif start <= task_id <= stop:
             msg("Executing task #%d: '%s'" % (task_id, task_name))
             path = write_body(cmd_args, prologue_body, task_id, task_name, task_body)
 
