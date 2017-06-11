@@ -72,7 +72,8 @@ def write_body(cmd_args, prologue_body, task_id, task_name, task_body):
         f.write(cmd_args.bashheader + '\n\n')                               # bash header
 
         if cmd_args.evaluate is not None:
-            f.write(cmd_args.evaluate + "# JUST: user evaluate input\n")
+            f.write('\n## From -e option ##\n')
+            f.write(cmd_args.evaluate + '\n')
 
         # write the parsed config
         f.write('## CONFIG ##\n')
