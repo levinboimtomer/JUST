@@ -5,6 +5,7 @@ import sys
 import re
 import os.path
 import subprocess
+from subprocess import Popen
 
 import IO
 
@@ -41,17 +42,27 @@ def parseTasks(args):
     task_id = None
     task_name = None
     task_body = []
+    task_parents = dict()
     for line in lines:
         m_start = re.match(r"(.*):(.*):.*{{", line)
         m_end = re.match(r"^#*}}\s*$", line)
+        m_parent = re.match(r"\s*PARENTS:", line)
 
         if m_end:
             is_in = False
             task_id = int(task_id)
+            if task_id > 0 and task_id not in task_parents:
+               task_parents[task_id] = [task_id - 1] # Default case, just wait for prev to finish
             tasks[task_id] = {'task_name': task_name, 'task_body': task_body}
             task_body = []
 
-        if is_in:
+        if m_parent:
+            line = line.lstrip("PARENTS:")
+            pattern = re.compile(r'\s+')
+            line = re.sub(pattern, '', line)
+            parents = line.split(",")
+            task_parents[task_id] = sorted(parents)
+        elif is_in:
             task_body.append(line)
 
         if m_start:
@@ -59,7 +70,7 @@ def parseTasks(args):
             task_id, task_name = m_start.groups(0)
             if '-' in task_name:
                 msg("WARNING: task name should not contain -")
-    return tasks
+    return (tasks,task_parents)
 
 
 def write_body(cmd_args, prologue_body, task_id, task_name, task_body):
@@ -106,7 +117,27 @@ def lookupTask(task_id, tasks):
             raise ValueError("task name {} is ambiguous".format(task_id))
         return cands[0]
 
-def executeTasks(cmd_args, tasks):
+def getNoDepenencyTasks(queue):
+    tasks_to_run = []
+    to_delete = []
+    for child_id in queue:
+        parents = queue[child_id]
+        if len(parents) == 0:
+            tasks_to_run.append(child_id)
+            to_delete.append(child_id)
+    for to_d in to_delete:
+        del queue[to_d]
+    return (queue, tasks_to_run)
+
+def deleteInQueue(queue, task):
+    for child_id in queue:
+        parents = queue[child_id]
+        if task in parents:
+            parents.remove(task)
+        queue[child_id] = parents
+    return queue
+
+def executeTasks(cmd_args, tasks, task_parents):
 
     try:
         start, stop = cmd_args.stages.split('-', 1)
@@ -125,14 +156,33 @@ def executeTasks(cmd_args, tasks):
 
     qsub_id = None
     prologue_body = []
-    for task_id in sorted(tasks.keys()):
 
-        task_name = tasks[task_id]['task_name']
-        task_body = tasks[task_id]['task_body']
-        if task_id == 0:
-            prologue_body = task_body
+    if 0 in tasks:
+        prologue_body = tasks[0]['task_body']
 
-        elif start <= task_id <= stop:
+    queue = dict()
+    for child_id in task_parents:
+        if start <= child_id <= stop:
+            parents = task_parents[child_id]
+            range_parents = []
+            for parent in parents:
+                if start <= parent <= stop:
+                    range_parents.append(parent) # Make sure only range is viewed ... could fail in unexpected ways
+            queue[child_id] = range_parents
+
+
+    # While queue not empty
+    while bool(queue):
+        queue, tasks_to_run = getNoDepenencyTasks(queue)
+        #print "tasks_to_run:", tasks_to_run
+
+        commands = []
+
+        for task_id in tasks_to_run:
+            task_name = tasks[task_id]['task_name']
+            task_body = tasks[task_id]['task_body']
+
+        #if start <= task_id <= stop: # Should have already been checked
             msg("Executing task #%d: '%s'" % (task_id, task_name))
             path = write_body(cmd_args, prologue_body, task_id, task_name, task_body)
 
@@ -145,16 +195,38 @@ def executeTasks(cmd_args, tasks):
                 cmd.extend(['-v', 'workdir='+cmd_args.workdir])
                 cmd.append(path)
                 msg("running: " + ' '.join(cmd))
-                output = subprocess.check_output(cmd)
-                msg("qsub output:\n" + output)
-                possible_ids = [int(s) for s in output.split() if s.isdigit()]
-                if len(possible_ids) > 0: qsub_id = possible_ids[0]  # extract qsub task id
+                commands.append(cmd)
+                #output = subprocess.check_output(cmd)
+                #msg("qsub output:\n" + output)
+                #possible_ids = [int(s) for s in output.split() if s.isdigit()]
+                #if len(possible_ids) > 0: qsub_id = possible_ids[0]  # extract qsub task id
 
             else:
                 os.chmod(path, 0755)    # make executable.
                 env = dict(os.environ)
                 env['workdir'] = cmd_args.workdir
-                status = subprocess.check_call(path, env=env)
+                #status = subprocess.check_call(path, env=env)
+                commands.append((path, env))
+
+            # Remove from queue
+            queue = deleteInQueue(queue, task_id)
+
+        #print "commands:", commands # Nasty to look at
+        if cmd_args.qsub is not None:
+            #TODO: test qsub is not broken
+            processes = [Popen(cmd) for cmd in commands]
+            # Wait for all to finish ... Naive and dumb, but want to verify this first before moving on
+            for p in processes:
+                output = p.wait()
+                msg("qsub output:\n" + output)
+                possible_ids = [int(s) for s in output.split() if s.isdigit()]
+                if len(possible_ids) > 0: qsub_id = possible_ids[0]  # extract qsub task id
+        else:
+            processes = [Popen(cmd[0], env=cmd[1]) for cmd in commands]
+            # Wait for all to finish ... Naive and dumb, but want to verify this first before moving on
+            for p in processes:
+                p.wait()
+
 
 
 def make_dir(input_dir):
@@ -165,7 +237,7 @@ def make_dir(input_dir):
 
 if __name__ == '__main__':
     cmd_args = parseArgs()
-    tasks = parseTasks(cmd_args)
+    tasks, task_parents = parseTasks(cmd_args)
     make_dir(cmd_args.workdir)
 
 
@@ -174,4 +246,4 @@ if __name__ == '__main__':
         for task_id, task_params in tasks.items():
             msg("stage %d: %s" % (task_id, task_params['task_name']))
     else:
-        executeTasks(cmd_args, tasks)
+        executeTasks(cmd_args, tasks, task_parents)
