@@ -79,10 +79,16 @@ def parseTasks(args):
             else:
                 msg("ERROR: task must have exactly one id")
                 sys.exit(1)
+            if task_id == prev_id:
+                msg("ERROR: more than one task has id {}".format(task_id))
+                sys.exit(1)
+            elif task_id < prev_id:
+                msg("ERROR: task ids not in increasing order")
+                sys.exit(1)
 
             if len(task_parents) == 0 and prev_id is not None:
-                task_parents = [prev_id]
-            elif None in task_parents:
+                task_parents = [prev_id] # this would be incorrect if tasks not in order
+            elif None in task_parents: # so parents=none,123 still means no parents
                 task_parents = []
 
             if task_id > 0: prev_id = task_id
@@ -200,13 +206,13 @@ def run_local(tasks, start, stop):
             p.wait()
 
 def run_sge(tasks, start, stop):
-    for task_id in tasks:
+    for task_id in sorted(tasks):
         if start <= task_id <= stop:
             cmd = ['qsub']
-            if tasks[task_id]['task_parents']:
-                parents = tasks[task_id]['task_parents']
-                parents = ','.join(tasks[parent]['jobid'] for parent in parents)
-                cmd.extend(['-hold_jid', parents])
+            parents = tasks[task_id]['task_parents']
+            parents = [tasks[p]['jobid'] for p in parents if start <= p <= stop]
+            if parents:
+                cmd.extend(['-hold_jid', ','.join(map(str, parents))])
             cmd.extend(['-q', cmd_args.qsub])
             cmd.extend(['-N', "s{}.{}.wd={}".format(task_id, tasks[task_id]['task_name'], cmd_args.workdir)])
             cmd.extend(['-v', 'workdir='+cmd_args.workdir])
