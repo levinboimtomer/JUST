@@ -163,6 +163,64 @@ def deleteInQueue(queue, task):
         queue[child_id] = parents
     return queue
 
+def run_local(tasks, start, stop):
+    # Create subgraph of dependencies
+    queue = dict()
+    for child_id in tasks:
+        if start <= child_id <= stop:
+            parents = tasks[child_id]['task_parents']
+            range_parents = []
+            for parent in parents:
+                if start <= parent <= stop:
+                    range_parents.append(parent) # Make sure only range is viewed ... could fail in unexpected ways
+            queue[child_id] = range_parents
+
+    while len(queue) > 0:
+        queue, tasks_to_run = getNoDependencyTasks(queue)
+
+        commands = []
+
+        for task_id in tasks_to_run:
+            task_name = tasks[task_id]['task_name']
+            task_body = tasks[task_id]['task_body']
+
+            msg("Executing task #%d: '%s'" % (task_id, task_name))
+
+            os.chmod(path, 0755)    # make executable.
+            env = dict(os.environ)
+            env['workdir'] = cmd_args.workdir
+            commands.append((path, env))
+
+            # Remove from queue
+            queue = deleteInQueue(queue, task_id)
+
+        processes = [Popen(cmd[0], env=cmd[1]) for cmd in commands]
+        # Wait for all to finish ... Naive and dumb, but want to verify this first before moving on
+        for p in processes:
+            p.wait()
+
+def run_sge(tasks, start, stop):
+    for task_id in tasks:
+        if start <= task_id <= stop:
+            cmd = ['qsub']
+            if tasks[task_id]['task_parents']:
+                parents = tasks[task_id]['task_parents']
+                parents = ','.join(tasks[parent]['jobid'] for parent in parents)
+                cmd.extend(['-hold_jid', parents])
+            cmd.extend(['-q', cmd_args.qsub])
+            cmd.extend(['-N', "s{}.{}.wd={}".format(task_id, tasks[task_id]['task_name'], cmd_args.workdir)])
+            cmd.extend(['-v', 'workdir='+cmd_args.workdir])
+            cmd.append(tasks[task_id]['task_path'])
+            msg("running: " + ' '.join(cmd))
+            output = subprocess.check_output(cmd)
+            msg("qsub output: " + output.strip())
+            m = re.match(r"^\s*Your job (\d+)", output)
+            if m:
+                tasks[task_id]['jobid'] = m.group(1)
+            else:
+                msg("ERROR: couldn't get job id")
+                sys.exit(1)
+
 def executeTasks(cmd_args, tasks):
 
     try:
@@ -187,80 +245,23 @@ def executeTasks(cmd_args, tasks):
         msg("invalid range of tasks")
         sys.exit(1)
 
-    qsub_id = None
-    prologue_body = []
 
     if 0 in tasks:
         prologue_body = tasks[0]['task_body']
+    else:
+        prologue_body = []
 
-    queue = dict()
-    for child_id in tasks:
-        if start <= child_id <= stop:
-            parents = tasks[child_id]['task_parents']
-            range_parents = []
-            for parent in parents:
-                if start <= parent <= stop:
-                    range_parents.append(parent) # Make sure only range is viewed ... could fail in unexpected ways
-            queue[child_id] = range_parents
-
-
-    # While queue not empty
-    while bool(queue):
-        queue, tasks_to_run = getNoDependencyTasks(queue)
-        #print "tasks_to_run:", tasks_to_run
-
-        commands = []
-
-        for task_id in tasks_to_run:
+    for task_id in tasks:
+        if start <= task_id <= stop:
             task_name = tasks[task_id]['task_name']
             task_body = tasks[task_id]['task_body']
-
-        #if start <= task_id <= stop: # Should have already been checked
-            msg("Executing task #%d: '%s'" % (task_id, task_name))
             path = write_body(cmd_args, prologue_body, task_id, task_name, task_body)
+            tasks[task_id]['task_path'] = path
 
-            if cmd_args.qsub is not None:
-                cmd = ['qsub']
-                if qsub_id is not None:
-                    cmd.extend(['-hold_jid', str(qsub_id)])
-                cmd.extend(['-q', cmd_args.qsub])
-                cmd.extend(['-N', "s{}.{}.wd={}".format(task_id, task_name, cmd_args.workdir)])
-                cmd.extend(['-v', 'workdir='+cmd_args.workdir])
-                cmd.append(path)
-                msg("running: " + ' '.join(cmd))
-                commands.append(cmd)
-                #output = subprocess.check_output(cmd)
-                #msg("qsub output:\n" + output)
-                #possible_ids = [int(s) for s in output.split() if s.isdigit()]
-                #if len(possible_ids) > 0: qsub_id = possible_ids[0]  # extract qsub task id
-
-            else:
-                os.chmod(path, 0755)    # make executable.
-                env = dict(os.environ)
-                env['workdir'] = cmd_args.workdir
-                #status = subprocess.check_call(path, env=env)
-                commands.append((path, env))
-
-            # Remove from queue
-            queue = deleteInQueue(queue, task_id)
-
-        #print "commands:", commands # Nasty to look at
-        if cmd_args.qsub is not None:
-            #TODO: test qsub is not broken
-            processes = [Popen(cmd) for cmd in commands]
-            # Wait for all to finish ... Naive and dumb, but want to verify this first before moving on
-            for p in processes:
-                output = p.wait()
-                msg("qsub output:\n" + output)
-                possible_ids = [int(s) for s in output.split() if s.isdigit()]
-                if len(possible_ids) > 0: qsub_id = possible_ids[0]  # extract qsub task id
-        else:
-            processes = [Popen(cmd[0], env=cmd[1]) for cmd in commands]
-            # Wait for all to finish ... Naive and dumb, but want to verify this first before moving on
-            for p in processes:
-                p.wait()
-
-
+    if cmd_args.qsub is not None:
+        run_sge(tasks, start, stop)
+    else:
+        run_local(tasks, start, stop)
 
 def make_dir(input_dir):
     if not os.path.exists(input_dir):
