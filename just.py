@@ -37,40 +37,66 @@ def parseArgs():
 def parseTasks(args):
     lines = IO.readlines(args.main, strip=True, skip=['empty'])
     tasks = dict()
-
     is_in = False
-    task_id = None
-    task_name = None
-    task_body = []
-    task_parents = dict()
+    prev_id = None
     for line in lines:
-        m_start = re.match(r"(.*):(.*):.*{{", line)
-        m_end = re.match(r"^#*}}\s*$", line)
-        m_parent = re.match(r"\s*PARENTS:", line)
-
-        if m_end:
-            is_in = False
-            task_id = int(task_id)
-            if task_id > 0 and task_id not in task_parents:
-               task_parents[task_id] = [task_id - 1] # Default case, just wait for prev to finish
-            tasks[task_id] = {'task_name': task_name, 'task_body': task_body}
-            task_body = []
-
-        if m_parent:
-            line = line.lstrip("PARENTS:")
-            pattern = re.compile(r'\s+')
-            line = re.sub(pattern, '', line)
-            parents = line.split(",")
-            task_parents[task_id] = sorted(parents)
-        elif is_in:
-            task_body.append(line)
+        m_start = re.match(r"^(.*):\s*{{\s*$", line)
+        m_end = re.match(r"^\s*}}\s*$", line)
 
         if m_start:
             is_in = True
-            task_id, task_name = m_start.groups(0)
+            task_id = []
+            task_name = []
+            task_parents = []
+            for attr in m_start.group(1).split(":"):
+                try:
+                    attr = int(attr)
+                except ValueError:
+                    pass
+
+                if isinstance(attr, int):
+                    task_id.append(attr)
+                elif "=" in attr:
+                    key, val = attr.split("=", 1)
+                    if key.strip() == "parents":
+                        if val == "none":
+                            task_parents.append(None)
+                        else:
+                            task_parents.extend(map(int,val.split(",")))
+                else:
+                    task_name.append(attr.strip())
+
+            if len(task_name) == 1:
+                task_name = task_name[0]
+            else:
+                msg("ERROR: task must have exactly one name")
+                sys.exit(1)
             if '-' in task_name:
                 msg("WARNING: task name should not contain -")
-    return (tasks,task_parents)
+
+            if len(task_id) == 1:
+                task_id = task_id[0]
+            else:
+                msg("ERROR: task must have exactly one id")
+                sys.exit(1)
+
+            if len(task_parents) == 0 and prev_id is not None:
+                task_parents = [prev_id]
+            elif None in task_parents:
+                task_parents = []
+
+            if task_id > 0: prev_id = task_id
+
+            task_body = []
+
+        elif m_end:
+            is_in = False
+            tasks[task_id] = {'task_name': task_name, 'task_body': task_body, 'task_parents': task_parents}
+
+        elif is_in:
+            task_body.append(line)
+
+    return tasks
 
 
 def write_body(cmd_args, prologue_body, task_id, task_name, task_body):
@@ -117,7 +143,7 @@ def lookupTask(task_id, tasks):
             raise ValueError("task name {} is ambiguous".format(task_id))
         return cands[0]
 
-def getNoDepenencyTasks(queue):
+def getNoDependencyTasks(queue):
     tasks_to_run = []
     to_delete = []
     for child_id in queue:
@@ -137,7 +163,7 @@ def deleteInQueue(queue, task):
         queue[child_id] = parents
     return queue
 
-def executeTasks(cmd_args, tasks, task_parents):
+def executeTasks(cmd_args, tasks):
 
     try:
         start, stop = cmd_args.stages.split('-', 1)
@@ -154,6 +180,13 @@ def executeTasks(cmd_args, tasks, task_parents):
         msg(e)
         sys.exit(1)
 
+    if start == 0:
+        msg("task 0 cannot be run by itself")
+        sys.exit(1)
+    if stop < start:
+        msg("invalid range of tasks")
+        sys.exit(1)
+
     qsub_id = None
     prologue_body = []
 
@@ -161,9 +194,9 @@ def executeTasks(cmd_args, tasks, task_parents):
         prologue_body = tasks[0]['task_body']
 
     queue = dict()
-    for child_id in task_parents:
+    for child_id in tasks:
         if start <= child_id <= stop:
-            parents = task_parents[child_id]
+            parents = tasks[child_id]['task_parents']
             range_parents = []
             for parent in parents:
                 if start <= parent <= stop:
@@ -173,7 +206,7 @@ def executeTasks(cmd_args, tasks, task_parents):
 
     # While queue not empty
     while bool(queue):
-        queue, tasks_to_run = getNoDepenencyTasks(queue)
+        queue, tasks_to_run = getNoDependencyTasks(queue)
         #print "tasks_to_run:", tasks_to_run
 
         commands = []
@@ -237,7 +270,7 @@ def make_dir(input_dir):
 
 if __name__ == '__main__':
     cmd_args = parseArgs()
-    tasks, task_parents = parseTasks(cmd_args)
+    tasks = parseTasks(cmd_args)
     make_dir(cmd_args.workdir)
 
 
@@ -246,4 +279,4 @@ if __name__ == '__main__':
         for task_id, task_params in tasks.items():
             msg("stage %d: %s" % (task_id, task_params['task_name']))
     else:
-        executeTasks(cmd_args, tasks, task_parents)
+        executeTasks(cmd_args, tasks)
