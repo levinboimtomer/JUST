@@ -24,6 +24,7 @@ def parseArgs():
     parser.add_argument('--debug', '-x', action='store_true', help="debug bash files (-x)")
     parser.add_argument('--list', action='store_true', help="list which stages are available")
     parser.add_argument('--qsub', '-q', default=None, type=str, help='qsub queue (works for a single task only)')
+    parser.add_argument('--processes', '-p', default=1, type=int, help='maximum number of concurrent processes to run (local mode only)')
 
     args = parser.parse_args()
     if args.verbose:
@@ -149,61 +150,47 @@ def lookupTask(task_id, tasks):
             raise ValueError("task name {} is ambiguous".format(task_id))
         return cands[0]
 
-def getNoDependencyTasks(queue):
-    tasks_to_run = []
-    to_delete = []
-    for child_id in queue:
-        parents = queue[child_id]
-        if len(parents) == 0:
-            tasks_to_run.append(child_id)
-            to_delete.append(child_id)
-    for to_d in to_delete:
-        del queue[to_d]
-    return (queue, tasks_to_run)
 
-def deleteInQueue(queue, task):
-    for child_id in queue:
-        parents = queue[child_id]
-        if task in parents:
-            parents.remove(task)
-        queue[child_id] = parents
-    return queue
+def run_local(tasks, start, stop, processes=1):
+    running = dict()
+    queue = sorted(i for i in tasks if start <= i <= stop)
+    
+    env = dict(os.environ)
+    env['workdir'] = cmd_args.workdir
 
-def run_local(tasks, start, stop):
-    # Create subgraph of dependencies
-    queue = dict()
-    for child_id in tasks:
-        if start <= child_id <= stop:
-            parents = tasks[child_id]['task_parents']
-            range_parents = []
-            for parent in parents:
-                if start <= parent <= stop:
-                    range_parents.append(parent) # Make sure only range is viewed ... could fail in unexpected ways
-            queue[child_id] = range_parents
+    while len(running) + len(queue) > 0:
+        runnable = []
+        for task_id in queue:
+            for parent_id in tasks[task_id]['task_parents']:
+                if parent_id in running or parent_id in queue:
+                    break
+            else:
+                runnable.append(task_id)
 
-    while len(queue) > 0:
-        queue, tasks_to_run = getNoDependencyTasks(queue)
+        while len(running) < processes and len(runnable) > 0:
+            task_id = runnable.pop(0)
+            msg("Executing task %d: %s" % (task_id, tasks[task_id]['task_name']))
+            queue.remove(task_id)
+            running[task_id] = Popen(tasks[task_id]['task_path'], env=env)
 
-        commands = []
+        try:
+            os.wait()
+        except OSError:
+            pass
 
-        for task_id in tasks_to_run:
-            task_name = tasks[task_id]['task_name']
-            task_body = tasks[task_id]['task_body']
+        done = []
+        for task_id, process in running.items():
+            status = process.poll()
+            if status is not None:
+                if status != 0:
+                    msg("WARNING: task {} exited with status {}".format(task_id, status))
+                else:
+                    msg("Task {} completed successfully".format(task_id))
+                done.append(task_id)
 
-            msg("Executing task #%d: '%s'" % (task_id, task_name))
+        for task_id in done:
+            del running[task_id]
 
-            os.chmod(path, 0755)    # make executable.
-            env = dict(os.environ)
-            env['workdir'] = cmd_args.workdir
-            commands.append((path, env))
-
-            # Remove from queue
-            queue = deleteInQueue(queue, task_id)
-
-        processes = [Popen(cmd[0], env=cmd[1]) for cmd in commands]
-        # Wait for all to finish ... Naive and dumb, but want to verify this first before moving on
-        for p in processes:
-            p.wait()
 
 def run_sge(tasks, start, stop):
     for task_id in sorted(tasks):
@@ -262,12 +249,13 @@ def executeTasks(cmd_args, tasks):
             task_name = tasks[task_id]['task_name']
             task_body = tasks[task_id]['task_body']
             path = write_body(cmd_args, prologue_body, task_id, task_name, task_body)
+            os.chmod(path, 0755)    # make executable.
             tasks[task_id]['task_path'] = path
 
     if cmd_args.qsub is not None:
         run_sge(tasks, start, stop)
     else:
-        run_local(tasks, start, stop)
+        run_local(tasks, start, stop, processes=cmd_args.processes)
 
 def make_dir(input_dir):
     if not os.path.exists(input_dir):
