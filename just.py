@@ -5,6 +5,7 @@ import sys
 import re
 import os.path
 import subprocess
+from subprocess import Popen
 
 import IO
 
@@ -23,6 +24,7 @@ def parseArgs():
     parser.add_argument('--debug', '-x', action='store_true', help="debug bash files (-x)")
     parser.add_argument('--list', action='store_true', help="list which stages are available")
     parser.add_argument('--qsub', '-q', default=None, type=str, help='qsub queue (works for a single task only)')
+    parser.add_argument('--processes', '-p', default=1, type=int, help='maximum number of concurrent processes to run (local mode only)')
 
     args = parser.parse_args()
     if args.verbose:
@@ -36,29 +38,71 @@ def parseArgs():
 def parseTasks(args):
     lines = IO.readlines(args.main, strip=True, skip=['empty'])
     tasks = dict()
-
     is_in = False
-    task_id = None
-    task_name = None
-    task_body = []
+    prev_id = None
     for line in lines:
-        m_start = re.match(r"(.*):(.*):.*{{", line)
-        m_end = re.match(r"^#*}}\s*$", line)
-
-        if m_end:
-            is_in = False
-            task_id = int(task_id)
-            tasks[task_id] = {'task_name': task_name, 'task_body': task_body}
-            task_body = []
-
-        if is_in:
-            task_body.append(line)
+        m_start = re.match(r"^(.*):\s*{{\s*$", line)
+        m_end = re.match(r"^\s*}}\s*$", line)
 
         if m_start:
             is_in = True
-            task_id, task_name = m_start.groups(0)
+            task_id = []
+            task_name = []
+            task_parents = []
+            for attr in m_start.group(1).split(":"):
+                try:
+                    attr = int(attr)
+                except ValueError:
+                    pass
+
+                if isinstance(attr, int):
+                    task_id.append(attr)
+                elif "=" in attr:
+                    key, val = attr.split("=", 1)
+                    if key.strip() == "parents":
+                        if val == "none":
+                            task_parents.append(None)
+                        else:
+                            task_parents.extend(map(int,val.split(",")))
+                else:
+                    task_name.append(attr.strip())
+
+            if len(task_name) == 1:
+                task_name = task_name[0]
+            else:
+                msg("ERROR: task must have exactly one name")
+                sys.exit(1)
             if '-' in task_name:
                 msg("WARNING: task name should not contain -")
+
+            if len(task_id) == 1:
+                task_id = task_id[0]
+            else:
+                msg("ERROR: task must have exactly one id")
+                sys.exit(1)
+            if task_id == prev_id:
+                msg("ERROR: more than one task has id {}".format(task_id))
+                sys.exit(1)
+            elif task_id < prev_id:
+                msg("ERROR: task ids not in increasing order")
+                sys.exit(1)
+
+            if len(task_parents) == 0 and prev_id is not None:
+                task_parents = [prev_id] # this would be incorrect if tasks not in order
+            elif None in task_parents: # so parents=none,123 still means no parents
+                task_parents = []
+
+            if task_id > 0: prev_id = task_id
+
+            task_body = []
+
+        elif m_end:
+            is_in = False
+            tasks[task_id] = {'task_name': task_name, 'task_body': task_body, 'task_parents': task_parents}
+
+        elif is_in:
+            task_body.append(line)
+
     return tasks
 
 
@@ -106,6 +150,70 @@ def lookupTask(task_id, tasks):
             raise ValueError("task name {} is ambiguous".format(task_id))
         return cands[0]
 
+
+def run_local(tasks, start, stop, processes=1):
+    running = dict()
+    queue = sorted(i for i in tasks if start <= i <= stop)
+    
+    env = dict(os.environ)
+    env['workdir'] = cmd_args.workdir
+
+    while len(running) + len(queue) > 0:
+        runnable = []
+        for task_id in queue:
+            for parent_id in tasks[task_id]['task_parents']:
+                if parent_id in running or parent_id in queue:
+                    break
+            else:
+                runnable.append(task_id)
+
+        while len(running) < processes and len(runnable) > 0:
+            task_id = runnable.pop(0)
+            msg("Executing task %d: %s" % (task_id, tasks[task_id]['task_name']))
+            queue.remove(task_id)
+            running[task_id] = Popen(tasks[task_id]['task_path'], env=env)
+
+        try:
+            os.wait()
+        except OSError:
+            pass
+
+        done = []
+        for task_id, process in running.items():
+            status = process.poll()
+            if status is not None:
+                if status != 0:
+                    msg("WARNING: task {} exited with status {}".format(task_id, status))
+                else:
+                    msg("Task {} completed successfully".format(task_id))
+                done.append(task_id)
+
+        for task_id in done:
+            del running[task_id]
+
+
+def run_sge(tasks, start, stop):
+    for task_id in sorted(tasks):
+        if start <= task_id <= stop:
+            cmd = ['qsub']
+            parents = tasks[task_id]['task_parents']
+            parents = [tasks[p]['jobid'] for p in parents if start <= p <= stop]
+            if parents:
+                cmd.extend(['-hold_jid', ','.join(map(str, parents))])
+            cmd.extend(['-q', cmd_args.qsub])
+            cmd.extend(['-N', "s{}.{}.wd={}".format(task_id, tasks[task_id]['task_name'], cmd_args.workdir)])
+            cmd.extend(['-v', 'workdir='+cmd_args.workdir])
+            cmd.append(tasks[task_id]['task_path'])
+            msg("running: " + ' '.join(cmd))
+            output = subprocess.check_output(cmd)
+            msg("qsub output: " + output.strip())
+            m = re.match(r"^\s*Your job (\d+)", output)
+            if m:
+                tasks[task_id]['jobid'] = m.group(1)
+            else:
+                msg("ERROR: couldn't get job id")
+                sys.exit(1)
+
 def executeTasks(cmd_args, tasks):
 
     try:
@@ -123,39 +231,31 @@ def executeTasks(cmd_args, tasks):
         msg(e)
         sys.exit(1)
 
-    qsub_id = None
-    prologue_body = []
-    for task_id in sorted(tasks.keys()):
+    if start == 0:
+        msg("task 0 cannot be run by itself")
+        sys.exit(1)
+    if stop < start:
+        msg("invalid range of tasks")
+        sys.exit(1)
 
-        task_name = tasks[task_id]['task_name']
-        task_body = tasks[task_id]['task_body']
-        if task_id == 0:
-            prologue_body = task_body
 
-        elif start <= task_id <= stop:
-            msg("Executing task #%d: '%s'" % (task_id, task_name))
+    if 0 in tasks:
+        prologue_body = tasks[0]['task_body']
+    else:
+        prologue_body = []
+
+    for task_id in tasks:
+        if start <= task_id <= stop:
+            task_name = tasks[task_id]['task_name']
+            task_body = tasks[task_id]['task_body']
             path = write_body(cmd_args, prologue_body, task_id, task_name, task_body)
+            os.chmod(path, 0755)    # make executable.
+            tasks[task_id]['task_path'] = path
 
-            if cmd_args.qsub is not None:
-                cmd = ['qsub']
-                if qsub_id is not None:
-                    cmd.extend(['-hold_jid', str(qsub_id)])
-                cmd.extend(['-q', cmd_args.qsub])
-                cmd.extend(['-N', "s{}.{}.wd={}".format(task_id, task_name, cmd_args.workdir)])
-                cmd.extend(['-v', 'workdir='+cmd_args.workdir])
-                cmd.append(path)
-                msg("running: " + ' '.join(cmd))
-                output = subprocess.check_output(cmd)
-                msg("qsub output:\n" + output)
-                possible_ids = [int(s) for s in output.split() if s.isdigit()]
-                if len(possible_ids) > 0: qsub_id = possible_ids[0]  # extract qsub task id
-
-            else:
-                os.chmod(path, 0755)    # make executable.
-                env = dict(os.environ)
-                env['workdir'] = cmd_args.workdir
-                status = subprocess.check_call(path, env=env)
-
+    if cmd_args.qsub is not None:
+        run_sge(tasks, start, stop)
+    else:
+        run_local(tasks, start, stop, processes=cmd_args.processes)
 
 def make_dir(input_dir):
     if not os.path.exists(input_dir):
