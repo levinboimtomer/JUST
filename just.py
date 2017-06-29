@@ -18,7 +18,7 @@ def parseArgs():
     parser.add_argument('main', type=str)
     parser.add_argument('--workdir', type=str, required=True, help='working directory')
     parser.add_argument('--stages', '-s', default="-", type=str, help='1 or 1-5 (default all)')
-    parser.add_argument('--evaluate', '-e', default=None, type=str, help="a bash command evaluated before each task")
+    parser.add_argument('--evaluate', '-e', default=None, type=str, action="append", help="a bash command evaluated before each task")
     parser.add_argument('--bashheader', default="#!/bin/bash", type=str, help='bash header')
     parser.add_argument('--verbose', '-v', action='store_true', help="verbose bash files (-v)")
     parser.add_argument('--debug', '-x', action='store_true', help="debug bash files (-x)")
@@ -115,9 +115,11 @@ def write_body(cmd_args, prologue_body, task_id, task_name, task_body):
 
         f.write(cmd_args.bashheader + '\n\n')                               # bash header
 
-        if cmd_args.evaluate is not None:
+        if cmd_args.evaluate:
             f.write('\n## From -e option ##\n')
-            f.write(cmd_args.evaluate + '\n')
+            for e in cmd_args.evaluate:
+                f.write(e + '\n')
+            f.write('\n')
 
         # write the parsed config
         f.write('## CONFIG ##\n')
